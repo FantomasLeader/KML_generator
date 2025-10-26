@@ -5,6 +5,7 @@ import O_Points
 import O_Infos
 import O_Fichier
 import O_Lignes
+import O_Polygones
 from Mbtiles_manager import MbtilesManager
 import os
 import sqlite3
@@ -66,6 +67,9 @@ class MBTilesViewer:
         
         # Onglet Infos
         O_Infos.setup_notebook_tabs(self)
+
+        #Onglet Polygones
+        O_Polygones.setup_notebook_tabs_polygone(self)
         
     def bind_events(self):
         self.canvas.bind("<Button-1>", self.mbtiles_manager.start_drag)
@@ -128,8 +132,10 @@ class MBTilesViewer:
         
         if tab_text == "Infos":
             O_Infos.update_info_panel(self)
-        elif tab_text == "Ligne":
+        elif tab_text == "  Lignes  ":
             O_Lignes.refresh_on_tab_change(self)
+        elif tab_text == " Polygones ":
+            O_Polygones.refresh_on_tab_change_polygone(self)
     
     def update_infos_after_load(self):
         """Mettre à jour l'onglet Infos après chargement"""

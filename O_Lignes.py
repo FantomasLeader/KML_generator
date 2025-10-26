@@ -1,3 +1,4 @@
+import re
 import tkinter as tk
 from tkinter import ttk, messagebox
 import sqlite3
@@ -8,76 +9,72 @@ def setup_notebook_tabs(app):
     app.notebook.add(ligne_frame, text="  Lignes  ")
     
     # Frame principal avec deux colonnes
-    main_frame = tk.Frame(ligne_frame)
-    main_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+    main_frame = tk.Frame(ligne_frame, relief=tk.GROOVE, borderwidth=2)
+    main_frame.pack(fill=tk.BOTH, expand=True, pady=(5,0))
     
     # Frame gauche pour les points disponibles
     left_frame = tk.Frame(main_frame)
-    left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
-    
-    tk.Label(left_frame, text="Points disponibles:", font=("Arial", 10, "bold")).pack(anchor=tk.W)
-    
-    # Listbox des points disponibles
+    left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+    tk.Label(left_frame, text="Points :", font=("Arial", 10)).pack(anchor=tk.W,padx=(5,5))
     app.points_listbox = tk.Listbox(left_frame, height=8)
-    app.points_listbox.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
-    
+    app.points_listbox.pack(fill=tk.BOTH, expand=True, pady=(5, 5), padx=(5,5))
+
     # Frame central pour les boutons
-    center_frame = tk.Frame(main_frame, width=80)
+    center_frame = tk.Frame(main_frame, width=50)
     center_frame.pack(side=tk.LEFT, fill=tk.Y, padx=5)
     center_frame.pack_propagate(False)
-    
-    # Boutons d'ajout/suppression
-    tk.Button(center_frame, text=">>", command=lambda: add_point_to_line(app), 
-              width=6).pack(pady=(50, 5))
-    tk.Button(center_frame, text="<<", command=lambda: remove_point_from_line(app), 
-              width=6).pack(pady=5)
-    
+    tk.Button(center_frame, text=">>", command=lambda: add_point_to_line(app), width=6).pack(pady=(50, 5))
+    tk.Button(center_frame, text="<<", command=lambda: remove_point_from_line(app), width=6).pack(pady=5)
+
     # Frame droite pour la ligne en cours
     right_frame = tk.Frame(main_frame)
     right_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0))
-    
-    tk.Label(right_frame, text="Points de la ligne:", font=("Arial", 10, "bold")).pack(anchor=tk.W)
-    
-    # Listbox des points de la ligne
+    tk.Label(right_frame, text="Ligne:", font=("Arial", 10)).pack(anchor=tk.W)
     app.line_points_listbox = tk.Listbox(right_frame, height=8)
-    app.line_points_listbox.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
+    app.line_points_listbox.pack(fill=tk.BOTH, expand=True, pady=(5, 5), padx=(5,5))
     
-    # Frame pour le nom de la ligne
-    name_frame = tk.Frame(ligne_frame)
-    name_frame.pack(fill=tk.X, padx=5, pady=5)
+    # Frame Nom ligne + Bouton créer (hauteur fixe, pas d'expansion)
+    name_frame = tk.Frame(ligne_frame, relief=tk.GROOVE, borderwidth=2)
+    name_frame.pack(fill=tk.X, expand=False, pady=(5,0))
+
+    tk.Label(name_frame, text="Nom de la ligne : ").grid(row=0,column=0, sticky=tk.W, pady=(5,5), padx=(5,5))
+    app.line_name_entry = tk.Entry(name_frame,width=15)
+    app.line_name_entry.grid(row=0,column=1, pady=(5,5), padx=(5,5),sticky="ew")
     
-    tk.Label(name_frame, text="Nom de la ligne:").pack(side=tk.LEFT)
-    app.line_name_entry = tk.Entry(name_frame, width=30)
-    app.line_name_entry.pack(side=tk.LEFT, padx=(5, 0))
-    
-    # Bouton créer ligne
-    tk.Button(ligne_frame, text="Créer la ligne", command=lambda: create_line(app), 
-              bg="lightgreen").pack(pady=5)
-    
+    tk.Label(name_frame, text="Epaisseur de la ligne : ").grid(row=1,column=0, sticky=tk.W, pady=(5,5), padx=(5,5))
+    app.line_width_entry = ttk.Combobox(name_frame, values=[str(i) for i in range(1, 11)], state="readonly",width=15,justify="center")
+    app.line_width_entry.current(1)
+    app.line_width_entry.grid(row=1,column=1, pady=(5,5), padx=(5,5),sticky="ew")
+
+    tk.Label(name_frame, text="Couleur de la ligne : ").grid(row=2,column=0, sticky=tk.W, pady=(5,5), padx=(5,5))
+    colors = ["rouge", "vert", "bleu", "jaune", "orange", "cyan", "magenta", "noir", "blanc"]
+    app.line_color_entry = ttk.Combobox(name_frame, values=colors, state="readonly",width=15,justify="center")
+    app.line_color_entry.current(0)
+    app.line_color_entry.grid(row=2,column=1, pady=(5,5), padx=(5,5),sticky="ew")
+
+    tk.Button(name_frame, text=" Créer ligne ", command=lambda: create_line(app)).grid(row=3,column=1, sticky='ew', pady=(5,5), padx=(5,5))
+
     # TreeView pour afficher les lignes existantes
-    tree_frame = tk.Frame(ligne_frame,relief=tk.GROOVE, borderwidth=2)
-    tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-    
-    tk.Label(tree_frame, text="Lignes existantes:", font=("Arial", 10, "bold")).pack(anchor=tk.W)
-    
-    # TreeView avec scrollbar
-    tree_container = tk.Frame(tree_frame)
-    tree_container.pack(fill=tk.BOTH, expand=True)
-    
-    app.lines_tree = ttk.Treeview(tree_container, columns=("Nom", "Color", "Width"), show="headings", height=6)
+    tree_frame = tk.Frame(ligne_frame, relief=tk.GROOVE, borderwidth=2)
+    tree_frame.pack(fill=tk.BOTH, expand=True, pady=(5,5))
+
+    tk.Label(tree_frame, text="Lignes existantes:", font=("Arial", 10)).pack(anchor=tk.W,pady=(4,4))
+
+    app.lines_tree = ttk.Treeview(tree_frame, columns=("Nom", "Color", "Width"), show="headings", height=6)
     app.lines_tree.heading("Nom", text="Nom")
     app.lines_tree.heading("Color", text="Couleur")
     app.lines_tree.heading("Width", text="Largeur")
 
     # Colonnes stretch pour ajustement automatique
-    app.lines_tree.column("Nom", anchor="center", stretch=True)
-    app.lines_tree.column("Color", anchor="center", stretch=True)
-    app.lines_tree.column("Width", anchor="center", stretch=True)
+    app.lines_tree.column("Nom", anchor="center", stretch=True,width=100)
+    app.lines_tree.column("Color", anchor="center", stretch=True, width=100)
+    app.lines_tree.column("Width", anchor="center", stretch=True, width=100)
     
-    scrollbar_lines = ttk.Scrollbar(tree_container, orient=tk.VERTICAL, command=app.lines_tree.yview)
+    scrollbar_lines = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=app.lines_tree.yview)
     app.lines_tree.configure(yscrollcommand=scrollbar_lines.set)
     
-    app.lines_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    app.lines_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=(5,5))
     scrollbar_lines.pack(side=tk.RIGHT, fill=tk.Y)
     
     # Charger les données initiales
@@ -101,10 +98,6 @@ def load_points(app):
             app.points_listbox.insert(tk.END, point[0])
     except sqlite3.Error:
         pass
-
-def refresh_points_list(app):
-    """Rafraîchir la liste des points quand l'onglet devient actif"""
-    load_points(app)
 
 def add_point_to_line(app):
     """Ajouter un point sélectionné à la ligne"""
@@ -182,6 +175,6 @@ def refresh_on_tab_change(app):
     selected_tab = app.notebook.select()
     tab_text = app.notebook.tab(selected_tab, "text")
     
-    if tab_text == "Ligne":
+    if tab_text == "  Lignes  ":
         load_points(app)
         load_lines(app)
