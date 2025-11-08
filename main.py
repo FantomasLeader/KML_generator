@@ -104,6 +104,7 @@ class MBTilesViewer:
         self.canvas.bind("<MouseWheel>", self.mbtiles_manager.zoom_map)
         self.canvas.bind("<Motion>", self.mbtiles_manager.mouse_motion)
     
+    # Afficher ou masquer le canvas
     def show_canvas(self):
         """Afficher le canvas et agrandir la fenêtre"""
         if not self.carte_chargee:
