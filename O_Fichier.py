@@ -1,7 +1,9 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import sqlite3
+from turtle import width
 import xml.etree.ElementTree as ET
+from kml_manager import create_kml_from_databases
 
 def setup_notebook_tabs(app):
     """Configurer l'onglet Fichiers"""
@@ -12,19 +14,42 @@ def setup_notebook_tabs(app):
     import_frame = ttk.LabelFrame(fichier_frame, text="Import", padding=10)
     import_frame.pack(fill=tk.X, padx=5, pady=5)
     
-    ttk.Button(import_frame, text="Importer une carte", 
-               command=lambda: import_carte(app)).pack(pady=5)
+    ttk.Button(import_frame, text="Carte .mbtiles", 
+               command=lambda: import_carte(app), width=20).pack(anchor=tk.W, pady=5)
     
     # Section Export
-    export_frame = ttk.LabelFrame(fichier_frame, text="Export", padding=10)
-    export_frame.pack(fill=tk.X, padx=5, pady=5)
+    export_frame = ttk.LabelFrame(fichier_frame, text="Export KML", padding=10)
+    export_frame.pack(fill=tk.BOTH, padx=5, pady=5)
     
-    ttk.Label(export_frame, text="Nom du fichier KML:").pack(anchor=tk.W)
+    ttk.Label(export_frame, text="Nom du fichier KML:").grid(row=0, column=0, sticky=tk.W, pady=5)
     app.kml_filename_var = tk.StringVar(value="export_points")
-    ttk.Entry(export_frame, textvariable=app.kml_filename_var, width=30).pack(pady=5)
-    
-    ttk.Button(export_frame, text="Exporter points sélectionnés", 
-               command=lambda: export_selected_points(app)).pack(pady=5)
+    ttk.Entry(export_frame, textvariable=app.kml_filename_var, width=20).grid(row=0, column=1, pady=5)
+
+    ttk.Button(export_frame, text="Exporter fichier KML", 
+               command=lambda: export_kml(app)).grid(row=1, column=0, sticky='ew', pady=10)    
+
+# Fonction export_kml accessible globalement
+def export_kml(app):
+    # Ouvre une boîte de dialogue pour choisir le nom et l'emplacement du fichier KML
+    filename = filedialog.asksaveasfilename(
+        title="Enregistrer le fichier KML",
+        defaultextension=".kml",
+        filetypes=[("KML files", "*.kml"), ("Tous les fichiers", "*.*")],
+        initialfile="export_points.kml"
+    )
+    if not filename:
+        return
+    try:
+        result_file = create_kml_from_databases(
+            filename,
+            "point.db",
+            "ligne.db",
+            "polygone.db"
+        )
+        messagebox.showinfo("Succès", f"KML exporté dans {result_file}")
+    except Exception as e:
+        messagebox.showerror("Erreur", f"Erreur lors de l'export: {str(e)}")
+
 
 def import_carte(app):
     """Importer une carte (fichier MBTiles)"""
@@ -37,6 +62,10 @@ def import_carte(app):
         app.db_path = file_path
         app.offset_x = 0
         app.offset_y = 0
+        
+        # Afficher le canvas et agrandir la fenêtre
+        app.show_canvas()
+        
         app.mbtiles_manager.draw_map()
 
 def export_selected_points(app):

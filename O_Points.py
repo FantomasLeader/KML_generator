@@ -4,6 +4,11 @@ import sqlite3
 import numpy as np
 import Utility
 import Validate
+import gc
+
+def close_db_connections():
+    """Force la fermeture de toutes les connexions SQLite ouvertes"""
+    gc.collect()  # Force le garbage collection pour fermer les connexions non fermées
 
 def setup_notebook_tabs(viewer):
     """Créer l'onglet point du notebook"""
@@ -17,9 +22,6 @@ def setup_notebook_tabs(viewer):
     points_frame = ttk.Frame(viewer.notebook)
     viewer.notebook.add(points_frame, text="  Points  ")
     
-    # Titre de la section création de points
-    ttk.Label(points_frame, text="Création de points",anchor="center", font=('Arial', 10, 'bold')).pack(pady=10, fill=tk.X, padx=5)
-    
     # Variable pour récuperer les choix de l'utilisateur
     viewer.creation_mode = tk.StringVar(value="coordonnees")
     viewer.coord_type = tk.StringVar(value="Degrés")
@@ -30,7 +32,7 @@ def setup_notebook_tabs(viewer):
     
     # Première ligne : Coordonnées + combobox
     coord_line = tk.Frame(coord_frame)
-    coord_line.pack(anchor='w', padx=5, pady=10)
+    coord_line.pack(anchor='w', padx=5, pady=(5,5))
     
     ttk.Radiobutton(coord_line, text="Coordonnées", variable=viewer.creation_mode, value="coordonnees", command=lambda: update_input_frame(viewer)).pack(side=tk.LEFT)
     viewer.coord_combo = ttk.Combobox(coord_line, textvariable=viewer.coord_type, values=["Degrés", "Degrés/Minutes", "Degrés/Minutes/Secondes", "Calamar"], width=40, state="readonly")
@@ -55,7 +57,7 @@ def setup_notebook_tabs(viewer):
     tk.Label(viewer.treeview_frame, text="Liste des points",anchor="center", font=('Arial', 10, 'bold')).pack(pady=5, fill=tk.X, padx=5)
     
     # Création du Treeview 
-    viewer.tree = ttk.Treeview(viewer.treeview_frame, columns=("selected", "nom", "lat", "lon"), show="headings", height=8)
+    viewer.tree = ttk.Treeview(viewer.treeview_frame, columns=("selected", "nom", "lat", "lon"), show="headings", height=6)
     viewer.tree.heading("selected", text="Export")
     viewer.tree.heading("nom", text="Nom")
     viewer.tree.heading("lat", text="Latitude")
@@ -67,14 +69,17 @@ def setup_notebook_tabs(viewer):
     viewer.tree.column("lon", width=60)
     
     viewer.checked_items = {}
-    viewer.tree.bind("<Button-1>", lambda event: on_tree_click(viewer, event))    
+    viewer.tree.bind("<Button-1>", lambda event: on_tree_click(viewer, event))
+    viewer.tree.bind("<Double-1>", lambda event: on_tree_double_click(viewer, event))    
     viewer.tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
    
     # Création des boutons
-        
-    ttk.Button(viewer.treeview_frame, text="Sélectionner tout",width=15).pack(side=tk.LEFT, padx=5)
-    ttk.Button(viewer.treeview_frame, text="Désélectionner tout").pack(side=tk.LEFT, padx=5)
-    ttk.Button(viewer.treeview_frame, text="Supprimer").pack(side=tk.LEFT, padx=5)
+    btn_select_all = ttk.Button(viewer.treeview_frame, text="Sélectionner tout", width=15, command=lambda: select_all_treeview(viewer))
+    btn_select_all.pack(side=tk.LEFT, padx=5)
+    btn_deselect_all = ttk.Button(viewer.treeview_frame, text="Désélectionner tout", command=lambda: deselect_all_treeview(viewer))
+    btn_deselect_all.pack(side=tk.LEFT, padx=5)
+    btn_delete = ttk.Button(viewer.treeview_frame, text="Supprimer", command=lambda: delete_selected_points(viewer))
+    btn_delete.pack(side=tk.LEFT, padx=5)
     
     # Initialiser l'affichage
     update_input_frame(viewer)
@@ -86,15 +91,16 @@ def setup_notebook_tabs(viewer):
     load_points(viewer)
 
 def update_input_frame(viewer):
-    """Met à jour le contenu du frame de saisie selon le mode sélectionné"""
+    """MAJ du frame de saisie selon le type de coordonnées choisies"""
     
-    # Effacer le contenu actuel
+    # Effacer le contenu de input_frame
     for widget in viewer.input_frame.winfo_children():
         widget.destroy()
     
     # Affiche les widgets en fonction du format des coordonnées
     if viewer.creation_mode.get() == "coordonnees":
         viewer.coord_combo.pack(side=tk.LEFT, padx=(56, 0))
+        print(viewer.coord_type.get())
         
         if viewer.coord_type.get() == "Degrés":
 
@@ -123,8 +129,8 @@ def update_input_frame(viewer):
         elif viewer.coord_type.get() == "Degrés/Minutes":
             # Nom
             tk.Label(viewer.input_frame, text="Nom :").grid(row=0, column=0, sticky="w", padx=5, pady=5)
-            viewer.nom_entry = tk.Entry(viewer.input_frame, width=20)
-            viewer.nom_entry.grid(row=0, column=1, columnspan=4, padx=5, sticky="w")
+            viewer.nom_entry = tk.Entry(viewer.input_frame)
+            viewer.nom_entry.grid(row=0, column=1, columnspan=4, sticky="ew")
             
             # Latitude
             tk.Label(viewer.input_frame, text="Latitude :").grid(row=1, column=0, sticky="w", padx=5, pady=5)            
@@ -163,7 +169,7 @@ def update_input_frame(viewer):
             # Nom
             tk.Label(viewer.input_frame, text="Nom :").grid(row=0, column=0, sticky="w", padx=5, pady=5)
             viewer.nom_entry = tk.Entry(viewer.input_frame)
-            viewer.nom_entry.grid(row=0, column=1, columnspan=6, padx=5, sticky="ew")
+            viewer.nom_entry.grid(row=0, column=1, columnspan=6, sticky="ew")
             
             # Latitude
             tk.Label(viewer.input_frame, text="Latitude :").grid(row=1, column=0, sticky="w", padx=5, pady=5)
@@ -186,7 +192,6 @@ def update_input_frame(viewer):
             viewer.lat_sec_entry.grid(row=1, column=6, padx=1, pady=5)
 
             tk.Label(viewer.input_frame, text='"').grid(row=1, column=7, padx=1, pady=5)
-
             
             
             # Longitude
@@ -226,27 +231,27 @@ def update_input_frame(viewer):
         elif viewer.coord_type.get() == "Calamar":
             # Nom
             tk.Label(viewer.input_frame, text="Nom :").grid(row=0, column=0, sticky="w", padx=5, pady=5)
-            viewer.nom_entry = tk.Entry(viewer.input_frame, width=20)
-            viewer.nom_entry.grid(row=0, column=1, columnspan=3, padx=5, sticky="w")
-            
-            # Axe Y (correspond à X dans Calamar)
-            tk.Label(viewer.input_frame, text="Axe Y :").grid(row=1, column=0, sticky="w", padx=5, pady=5)
-            viewer.calamar_y_entry = tk.Entry(viewer.input_frame, width=12)
-            viewer.calamar_y_entry.grid(row=1, column=1, padx=5, pady=5)
-            viewer.calamar_y_combo = ttk.Combobox(viewer.input_frame, values=["mL", "mC"], width=5, state="readonly")
-            viewer.calamar_y_combo.grid(row=1, column=2, padx=5, pady=5)
-            viewer.calamar_y_combo.set("mL")
+            viewer.nom_entry = tk.Entry(viewer.input_frame )
+            viewer.nom_entry.grid(row=0, column=1, columnspan=2, sticky="ew")
             
             # Axe X (correspond à Y dans Calamar)
-            tk.Label(viewer.input_frame, text="Axe X :").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+            tk.Label(viewer.input_frame, text="Axe Y :").grid(row=1, column=0, sticky="w", padx=5, pady=5)
             viewer.calamar_x_entry = tk.Entry(viewer.input_frame, width=12)
-            viewer.calamar_x_entry.grid(row=2, column=1, padx=5)
+            viewer.calamar_x_entry.grid(row=1, column=1, padx=5)
             viewer.calamar_x_combo = ttk.Combobox(viewer.input_frame, values=["mD", "mG"], width=5, state="readonly")
-            viewer.calamar_x_combo.grid(row=2, column=2, padx=5)
+            viewer.calamar_x_combo.grid(row=1, column=2, padx=5)
             viewer.calamar_x_combo.set("mD")
-            
+
+            # Axe Y (correspond à X dans Calamar)
+            tk.Label(viewer.input_frame, text="Axe X :").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+            viewer.calamar_y_entry = tk.Entry(viewer.input_frame, width=12)
+            viewer.calamar_y_entry.grid(row=2, column=1, padx=5, pady=5)
+            viewer.calamar_y_combo = ttk.Combobox(viewer.input_frame, values=["mL", "mC"], width=5, state="readonly")
+            viewer.calamar_y_combo.grid(row=2, column=2, padx=5, pady=5)
+            viewer.calamar_y_combo.set("mL")
+                                    
             # Bouton créer
-            tk.Button(viewer.input_frame, text="Créer le point", command=lambda: create_point_from_calamar(viewer)).grid(row=3, column=0, columnspan=3, pady=10)
+            tk.Button(viewer.input_frame, text="Créer le point", command=lambda: create_point_from_calamar(viewer)).grid(row=3, column=1, columnspan=2, pady=10,sticky="ew")
             
             # Bind pour validation
             viewer.calamar_y_entry.bind('<KeyRelease>', lambda e: Validate.validate_calamar(viewer))
@@ -256,7 +261,7 @@ def update_input_frame(viewer):
         # Vérifier s'il y a des points disponibles
         conn = sqlite3.connect("point.db")
         cursor = conn.cursor()
-        cursor.execute("SELECT name FROM elements")
+        cursor.execute("SELECT name FROM points")
         points = [row[0] for row in cursor.fetchall()]
         conn.close()
         
@@ -294,7 +299,7 @@ def update_input_frame(viewer):
             viewer.radial_distance_entry.bind('<KeyRelease>', lambda e: Validate.validate_radial(viewer))
             viewer.radial_bearing_entry.bind('<KeyRelease>', lambda e: Validate.validate_radial(viewer))
         else:
-            tk.Label(viewer.input_frame, text="Créez d'abord un point de référence", fg="gray").pack()
+            tk.Label(viewer.input_frame, text="Créez d'abord un point de référence", fg="gray").pack(pady=(10,10))
     
     elif viewer.creation_mode.get() == "click":
         # Nom
@@ -367,17 +372,33 @@ def create_point_from_click(viewer):
         return
     
     # Ajouter à la base de données
-    conn = sqlite3.connect("point.db")
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO elements (name, lat, lon) VALUES (?, ?, ?)",
-        (nom, lat, lon)
-    )
-    conn.commit()
-    conn.close()
+    try:
+        close_db_connections()  # Fermer toutes les connexions ouvertes
+        conn = sqlite3.connect("point.db", timeout=10.0)
+        cursor = conn.cursor()    
+        cursor.execute(
+            "INSERT INTO points (name, lat, lon) VALUES (?, ?, ?)",
+            (nom, lat, lon)
+        )
+        conn.commit()
+        conn.close()
         
-    # Recharger la liste des points
-    load_points(viewer)
+        # Recharger la liste des points
+        load_points(viewer)
+        messagebox.showinfo("Succès", f"Point '{nom}' créé avec succès")
+        
+        # Réinitialiser les champs
+        viewer.click_nom_entry.delete(0, tk.END)
+        viewer.click_lat_entry.delete(0, tk.END)
+        viewer.click_lon_entry.delete(0, tk.END)
+        
+    except sqlite3.IntegrityError:
+        messagebox.showerror("Erreur", f"Un point avec le nom '{nom}' existe déjà")
+    except sqlite3.Error as e:
+        messagebox.showerror("Erreur", f"Erreur lors de la création du point: {e}")
+    finally:
+        if 'conn' in locals():
+            conn.close()
 
 def create_point_from_coords(viewer):
     """Créer un point à partir des coordonnées saisies"""
@@ -411,17 +432,32 @@ def create_point_from_coords(viewer):
         return
     
     # Ajouter à la base de données
-    conn = sqlite3.connect("point.db")
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO elements (name, lat, lon) VALUES (?, ?, ?)",
-        (nom, lat, lon)
-    )
-    conn.commit()
-    conn.close()
-           
-    # Recharger la liste des points
-    load_points(viewer)
+    try:
+        conn = sqlite3.connect("point.db")
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO points (name, lat, lon) VALUES (?, ?, ?)",
+            (nom, lat, lon)
+        )
+        conn.commit()
+        conn.close()
+        
+        # Recharger la liste des points
+        load_points(viewer)
+        messagebox.showinfo("Succès", f"Point '{nom}' créé avec succès")
+        
+        # Réinitialiser les champs
+        viewer.nom_entry.delete(0, tk.END)
+        viewer.lat_entry.delete(0, tk.END)
+        viewer.lon_entry.delete(0, tk.END)
+        
+    except sqlite3.IntegrityError:
+        messagebox.showerror("Erreur", f"Un point avec le nom '{nom}' existe déjà")
+    except sqlite3.Error as e:
+        messagebox.showerror("Erreur", f"Erreur lors de la création du point: {e}")
+    finally:
+        if 'conn' in locals():
+            conn.close()
 
 def create_point_from_deg_min(viewer):
     """Créer un point à partir des coordonnées degrés/minutes"""
@@ -465,19 +501,34 @@ def create_point_from_deg_min(viewer):
         return
     
     # Ajouter à la base de données
-    conn = sqlite3.connect("point.db")
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO elements (name, lat, lon) VALUES (?, ?, ?)",
-        (nom, lat, lon)
-    )
-    conn.commit()
-    conn.close()
-    
-    messagebox.showinfo("Point créé", f"Point '{nom}' créé à {lat:.6f}, {lon:.6f}")
+    try:
+        conn = sqlite3.connect("point.db")
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO points (name, lat, lon) VALUES (?, ?, ?)",
+            (nom, lat, lon)
+        )
+        conn.commit()
+        conn.close()
         
-    # Recharger la liste des points
-    load_points(viewer)
+        # Recharger la liste des points
+        load_points(viewer)
+        messagebox.showinfo("Succès", f"Point '{nom}' créé avec succès")
+        
+        # Réinitialiser les champs
+        viewer.nom_entry.delete(0, tk.END)
+        viewer.lat_deg_entry.delete(0, tk.END)
+        viewer.lat_min_entry.delete(0, tk.END)
+        viewer.lon_deg_entry.delete(0, tk.END)
+        viewer.lon_min_entry.delete(0, tk.END)
+        
+    except sqlite3.IntegrityError:
+        messagebox.showerror("Erreur", f"Un point avec le nom '{nom}' existe déjà")
+    except sqlite3.Error as e:
+        messagebox.showerror("Erreur", f"Erreur lors de la création du point: {e}")
+    finally:
+        if 'conn' in locals():
+            conn.close()
     
 def create_point_from_deg_min_sec(viewer):
     """Créer un point à partir des coordonnées degrés/minutes/secondes"""
@@ -523,16 +574,36 @@ def create_point_from_deg_min_sec(viewer):
         return
     
     # Ajouter à la base de données
-    conn = sqlite3.connect("point.db")
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO elements (name, lat, lon) VALUES (?, ?, ?)",
-        (nom, lat, lon)
-    )
-    conn.commit()
-    conn.close()
-            
-    # Recharger la liste des points
+    try:
+        conn = sqlite3.connect("point.db")
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO points (name, lat, lon) VALUES (?, ?, ?)",
+            (nom, lat, lon)
+        )
+        conn.commit()
+        conn.close()
+        
+        # Recharger la liste des points
+        load_points(viewer)
+        messagebox.showinfo("Succès", f"Point '{nom}' créé avec succès")
+        
+        # Réinitialiser les champs
+        viewer.nom_entry.delete(0, tk.END)
+        viewer.lat_deg_entry.delete(0, tk.END)
+        viewer.lat_min_entry.delete(0, tk.END)
+        viewer.lat_sec_entry.delete(0, tk.END)
+        viewer.lon_deg_entry.delete(0, tk.END)
+        viewer.lon_min_entry.delete(0, tk.END)
+        viewer.lon_sec_entry.delete(0, tk.END)
+        
+    except sqlite3.IntegrityError:
+        messagebox.showerror("Erreur", f"Un point avec le nom '{nom}' existe déjà")
+    except sqlite3.Error as e:
+        messagebox.showerror("Erreur", f"Erreur lors de la création du point: {e}")
+    finally:
+        if 'conn' in locals():
+            conn.close()
     load_points(viewer)
 
 def create_point_from_calamar(viewer):
@@ -544,10 +615,10 @@ def create_point_from_calamar(viewer):
         return
     
     try:
-        y_val = float(viewer.calamar_y_entry.get())
-        x_val = float(viewer.calamar_x_entry.get())
-        y_unit = viewer.calamar_y_combo.get()
-        x_unit = viewer.calamar_x_combo.get()
+        y_val = float(viewer.calamar_x_entry.get())
+        x_val = float(viewer.calamar_y_entry.get())
+        y_unit = viewer.calamar_x_combo.get()
+        x_unit = viewer.calamar_y_combo.get()
         
         # Conversion en GPS
         lat, lon = Utility.convert_calamar_to_gps(x_val, y_val, x_unit, y_unit)
@@ -560,14 +631,12 @@ def create_point_from_calamar(viewer):
     conn = sqlite3.connect("point.db")
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO elements (name, lat, lon) VALUES (?, ?, ?)",
+        "INSERT INTO points (name, lat, lon) VALUES (?, ?, ?)",
         (nom, lat, lon)
     )
     conn.commit()
     conn.close()
-    
-    messagebox.showinfo("Point créé", f"Point '{nom}' créé à {lat:.6f}, {lon:.6f}")
-    
+        
     # Vider les champs
     viewer.nom_entry.delete(0, tk.END)
     viewer.calamar_y_entry.delete(0, tk.END)
@@ -611,7 +680,7 @@ def create_point_from_radial(viewer):
     # Récupérer le point de départ
     conn = sqlite3.connect("point.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT lat, lon FROM elements WHERE name = ?", (point_depart_nom,))
+    cursor.execute("SELECT lat, lon FROM points WHERE name = ?", (point_depart_nom,))
     result = cursor.fetchone()
     conn.close()
     
@@ -631,14 +700,12 @@ def create_point_from_radial(viewer):
     conn = sqlite3.connect("point.db")
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO elements (name, lat, lon) VALUES (?, ?, ?)",
+        "INSERT INTO points (name, lat, lon) VALUES (?, ?, ?)",
         (nom, new_lat, new_lon)
     )
     conn.commit()
     conn.close()
-    
-    messagebox.showinfo("Point créé", f"Point '{nom}' créé à {new_lat:.6f}, {new_lon:.6f}")
-    
+        
     # Vider les champs
     viewer.nom_entry.delete(0, tk.END)
     viewer.radial_distance_entry.delete(0, tk.END)
@@ -648,21 +715,21 @@ def create_point_from_radial(viewer):
     load_points(viewer)
 
 def load_points(viewer):
-    """Charger les points depuis la base de données"""
+    """Afficher les points sur la carte"""
     for item in viewer.tree.get_children():
         viewer.tree.delete(item)
     
     viewer.checked_items = {}
     conn = sqlite3.connect("point.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name, lat, lon FROM elements")
+    cursor.execute("SELECT name, lat, lon FROM points")
     for row in cursor.fetchall():
-        item_id = viewer.tree.insert("", tk.END, values=("⬜", row[1], f"{row[2]:.6f}", f"{row[3]:.6f}"))
+        item_id = viewer.tree.insert("", tk.END, values=("⬜", row[0], f"{row[1]:.6f}", f"{row[2]:.6f}"))
         viewer.checked_items[item_id] = {"checked": False, "data": row}
     conn.close()
     
     # Mettre à jour l'affichage sur la carte
-    viewer.draw_points()
+    viewer.mbtiles_manager.draw_points()
 
 def on_tree_click(viewer, event):
     """Gérer le clic sur le treeview"""
@@ -674,6 +741,26 @@ def on_tree_click(viewer, event):
         if column == "#1" and item in viewer.checked_items:
             toggle_checkbox(viewer, item)
 
+def on_tree_double_click(viewer, event):
+    """Gérer le double-clic sur le treeview pour centrer la carte"""
+    # Identifier l'élément double-cliqué
+    item = viewer.tree.identify_row(event.y)
+    
+    if item and item in viewer.checked_items:
+        # Récupérer les données du point
+        point_data = viewer.checked_items[item]["data"]
+        name, lat, lon = point_data
+        
+        # Vérifier qu'on a une carte chargée avant de centrer
+        if hasattr(viewer, 'mbtiles_manager') and viewer.db_path:
+            # Centrer la carte sur ce point
+            viewer.mbtiles_manager.center_map_on_point(lat, lon)
+            
+            # Optionnel : afficher un message pour confirmer l'action
+            print(f"Carte centrée sur le point '{name}' ({lat:.6f}, {lon:.6f})")
+        else:
+            print("Aucune carte chargée - impossible de centrer")
+
 def toggle_checkbox(viewer, item):
     """Basculer l'état de la case à cocher"""
     current_state = viewer.checked_items[item]["checked"]
@@ -683,3 +770,45 @@ def toggle_checkbox(viewer, item):
     values = list(viewer.tree.item(item)["values"])
     values[0] = "✅" if new_state else "⬜"
     viewer.tree.item(item, values=values)
+
+def select_all_treeview(viewer):
+    """Cocher toutes les cases du treeview"""
+    for item in viewer.checked_items:
+        viewer.checked_items[item]["checked"] = True
+        values = list(viewer.tree.item(item)["values"])
+        values[0] = "✅"
+        viewer.tree.item(item, values=values)
+
+def deselect_all_treeview(viewer):
+    """Décocher toutes les cases du treeview"""
+    for item in viewer.checked_items:
+        viewer.checked_items[item]["checked"] = False
+        values = list(viewer.tree.item(item)["values"])
+        values[0] = "⬜"
+        viewer.tree.item(item, values=values)
+
+def delete_selected_points(viewer):
+    """Supprimer les points cochés de la base de données et du treeview"""
+    to_delete = [item for item, info in viewer.checked_items.items() if info["checked"]]
+    if not to_delete:
+        messagebox.showwarning("Suppression", "Aucun point sélectionné.")
+        return
+    
+    try:
+        conn = sqlite3.connect("point.db")
+        cursor = conn.cursor()
+        for item in to_delete:
+            name = viewer.tree.item(item)["values"][1]
+            cursor.execute("DELETE FROM points WHERE name = ?", (name,))
+        conn.commit()
+        conn.close()
+        
+        load_points(viewer)
+        messagebox.showinfo("Suppression", f"{len(to_delete)} point(s) supprimé(s).")
+        
+    except sqlite3.Error as e:
+        messagebox.showerror("Erreur", f"Erreur lors de la suppression: {e}")
+    finally:
+        if 'conn' in locals():
+            conn.close()
+    

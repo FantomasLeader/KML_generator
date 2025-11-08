@@ -7,6 +7,208 @@ import Utility
 import O_Infos
 
 class MbtilesManager:
+    def draw_polygones(self):
+        """Dessiner tous les polygones sur la carte"""
+        viewer = self.viewer
+        if not hasattr(viewer, 'min_col') or not hasattr(viewer, 'max_row'):
+            return
+        viewer.canvas.delete("polygone")
+
+        # Charger les polygones
+        try:
+            conn_poly = sqlite3.connect("polygone.db")
+            cursor_poly = conn_poly.cursor()
+            cursor_poly.execute("SELECT name, color, width, fill, points_list FROM polygons")
+            polygones = cursor_poly.fetchall()
+            conn_poly.close()
+        except Exception as e:
+            print(f"Erreur chargement polygones: {e}")
+            return
+
+        color_map = {
+            "rouge": "red",
+            "vert": "green",
+            "bleu": "blue",
+            "jaune": "yellow",
+            "orange": "orange",
+            "cyan": "cyan",
+            "magenta": "magenta",
+            "noir": "black",
+            "blanc": "white"
+        }
+        for name, color, width, fill, points_list in polygones:
+            try:
+                # Dans la base, les polygones sont maintenant enregistrés avec des coordonnées:
+                # "lon,lat,0 lon2,lat2,0 ..." (séparées par des espaces)
+                pixel_points = []
+                if points_list:
+                    coord_tokens = [tok.strip() for tok in points_list.split() if tok.strip()]
+                    for tok in coord_tokens:
+                        parts = tok.split(',')
+                        if len(parts) >= 2:
+                            try:
+                                lon = float(parts[0])
+                                lat = float(parts[1])
+                            except ValueError:
+                                continue
+                            px = Utility.latlon_to_pixel(lat, lon, viewer.offset_x, viewer.offset_y, viewer.min_col, viewer.max_row, viewer.zoom)
+                            pixel_points.append(px)
+
+                if len(pixel_points) >= 3:
+                    tk_color = color_map.get(str(color).strip().lower(), "red")
+                    outline_color = tk_color
+                    fill_color = tk_color if int(fill) else ""
+                    # Transparence 50% avec Pillow
+                    if int(fill):
+                        # Déterminer la bounding box du polygone
+                        xs = [pt[0] for pt in pixel_points]
+                        ys = [pt[1] for pt in pixel_points]
+                        min_x, max_x = int(min(xs)), int(max(xs))
+                        min_y, max_y = int(min(ys)), int(max(ys))
+                        w, h = max_x - min_x + 1, max_y - min_y + 1
+                        if w < 1 or h < 1:
+                            continue
+                        # Créer une image RGBA transparente
+                        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+                        from PIL import ImageDraw
+                        draw = ImageDraw.Draw(img)
+                        # Couleur de remplissage avec alpha 128
+                        rgb = viewer.canvas.winfo_rgb(tk_color)
+                        r = int(rgb[0] / 256)
+                        g = int(rgb[1] / 256)
+                        b = int(rgb[2] / 256)
+                        fill_rgba = (r, g, b, 128)
+                        # Décaler les points pour l'image locale
+                        local_points = [(x - min_x, y - min_y) for x, y in pixel_points]
+                        draw.polygon(local_points, fill=fill_rgba)
+                        # Convertir en PhotoImage et afficher
+                        photo = ImageTk.PhotoImage(img)
+                        viewer.canvas.create_image(min_x, min_y, image=photo, anchor=tk.NW, tags="polygone")
+                        if not hasattr(viewer.canvas, "_poly_images"):
+                            viewer.canvas._poly_images = []
+                        viewer.canvas._poly_images.append(photo)
+                    # Dessiner la bordure opaque
+                    viewer.canvas.create_polygon(*[coord for point in pixel_points for coord in point], fill="", outline=outline_color, width=int(width), tags="polygone")
+            except Exception as e:
+                print(f"Erreur polygone '{name}': points_list={points_list} | Exception: {e}")
+                continue
+
+    def draw_lines(self):
+        """Dessiner toutes les lignes sur la carte (points_list = noms de points)"""
+        viewer = self.viewer
+        if not hasattr(viewer, 'min_col') or not hasattr(viewer, 'max_row'):
+            return
+        viewer.canvas.delete("line")
+        # Charger tous les points dans un dict {nom: (lat, lon)}
+        conn_points = sqlite3.connect("point.db")
+        cursor_points = conn_points.cursor()
+        cursor_points.execute("SELECT name, lat, lon FROM points")
+        points_data = {name: (lat, lon) for name, lat, lon in cursor_points.fetchall()}
+        conn_points.close()
+
+        # Charger les lignes
+        conn_lines = sqlite3.connect("ligne.db")
+        cursor_lines = conn_lines.cursor()
+        cursor_lines.execute("SELECT name, color, width, points_list FROM lines")
+        lines = cursor_lines.fetchall()
+        conn_lines.close()
+
+        color_map = {
+            "rouge": "red",
+            "vert": "green",
+            "bleu": "blue",
+            "jaune": "yellow",
+            "orange": "orange",
+            "cyan": "cyan",
+            "magenta": "magenta",
+            "noir": "black",
+            "blanc": "white"
+        }
+        for name, color, width, points_list in lines:
+            try:
+                # Dans la base, les lignes sont enregistrées avec des coordonnées:
+                # "lon,lat,0 lon2,lat2,0 ..." (séparées par des espaces)
+                pixel_points = []
+                if points_list:
+                    coord_tokens = [tok.strip() for tok in points_list.split() if tok.strip()]
+                    for tok in coord_tokens:
+                        parts = tok.split(',')
+                        if len(parts) >= 2:
+                            try:
+                                lon = float(parts[0])
+                                lat = float(parts[1])
+                            except ValueError:
+                                continue
+                            px = Utility.latlon_to_pixel(lat, lon, viewer.offset_x, viewer.offset_y, viewer.min_col, viewer.max_row, viewer.zoom)
+                            pixel_points.append(px)
+
+                if len(pixel_points) >= 2:
+                    tk_color = color_map.get(str(color).strip().lower(), "red")
+                    viewer.canvas.create_line(*[coord for point in pixel_points for coord in point], fill=tk_color, width=int(width), tags="line")
+            except Exception as e:
+                print(f"Erreur ligne '{name}': points_list={points_list} | Exception: {e}")
+                continue
+
+    def draw_points(self):
+        """Dessiner tous les points sur la carte"""
+        viewer = self.viewer
+        if not hasattr(viewer, 'min_col') or not hasattr(viewer, 'max_row'):
+            return
+        # Effacer les points existants
+        viewer.canvas.delete("point")
+        # Récupérer tous les points de la base de données
+        conn = sqlite3.connect("point.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT name, lat, lon FROM points")
+        points = cursor.fetchall()
+        conn.close()
+        # Dessiner chaque point
+        for nom, lat, lon in points:
+            x, y = Utility.latlon_to_pixel(lat, lon, viewer.offset_x, viewer.offset_y, viewer.min_col, viewer.max_row, viewer.zoom)
+            # Vérifier si le point est visible dans le canvas
+            canvas_width = viewer.canvas.winfo_width()
+            canvas_height = viewer.canvas.winfo_height()
+            if 0 <= x <= canvas_width and 0 <= y <= canvas_height:
+                # Dessiner le point (cercle rouge)
+                radius = 4
+                viewer.canvas.create_oval(x-radius, y-radius, x+radius, y+radius, 
+                                      fill="red", outline="darkred", width=2, tags="point")
+                # Ajouter le nom du point
+                viewer.canvas.create_text(x, y-10, text=nom, fill="black", 
+                                      font=("Arial", 8, "bold"), tags="point")
+                
+    def center_map_on_point(self, lat, lon):
+        """Centrer la carte sur un point donné en latitude/longitude"""
+        viewer = self.viewer
+        
+        if not viewer.db_path or not hasattr(viewer, 'min_col') or not hasattr(viewer, 'max_row'):
+            return
+        
+        # Obtenir les dimensions du canvas
+        canvas_width = viewer.canvas.winfo_width()
+        canvas_height = viewer.canvas.winfo_height()
+        
+        if canvas_width <= 1 or canvas_height <= 1:
+            canvas_width, canvas_height = 800, 600
+        
+        # Convertir lat/lon en coordonnées pixel pour le niveau de zoom actuel
+        target_x, target_y = Utility.latlon_to_pixel(
+            lat, lon, 
+            viewer.offset_x, viewer.offset_y, 
+            viewer.min_col, viewer.max_row, viewer.zoom
+        )
+        
+        # Calculer le décalage nécessaire pour centrer le point
+        center_x = canvas_width // 2
+        center_y = canvas_height // 2
+        
+        # Ajuster les offsets pour que le point soit au centre
+        viewer.offset_x += center_x - target_x
+        viewer.offset_y += center_y - target_y
+        
+        # Redessiner la carte
+        self.draw_map()
+
     def __init__(self, viewer):
         self.viewer = viewer
     
@@ -97,6 +299,7 @@ class MbtilesManager:
         self.draw_map()
         
     def draw_map(self):
+        # Dessine la carte avec les Objets lignes,polygones et points
         if not self.viewer.db_path:
             return
             
@@ -172,7 +375,6 @@ class MbtilesManager:
             
             conn.close()
             self.viewer.update_status(tiles_loaded)
-            self.viewer.draw_points()
             
         except Exception as e:
             messagebox.showerror("Erreur", f"Erreur: {e}")

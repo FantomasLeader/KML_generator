@@ -136,3 +136,116 @@ def convert_calamar_to_gps(x_val, y_val, x_unit, y_unit):
     result_lon = lon_params[0] * y_calamar + lon_params[1] * x_calamar + lon_params[2]
     
     return result_lat, result_lon
+
+def calculate_circle_points(center_lat, center_lon, radius_km, num_segments, is_arc=False, start_angle_deg=0, end_angle_deg=360, close_arc=True):
+    """Calcul de cercles ou arcs avec précision Vincenty"""
+    points = []
+    center_point = {"lat": center_lat, "lon": center_lon}
+
+    if is_arc:
+        if end_angle_deg < start_angle_deg:
+            end_angle_deg += 360
+        
+        # Pour les arcs fermés, ajouter le centre au début
+        if close_arc:
+            points.append((center_lon, center_lat))
+        
+        angle_range = end_angle_deg - start_angle_deg
+        effective_num_segments = max(num_segments, int(abs(angle_range)))
+        
+        # Générer les points de l'arc
+        for i in range(effective_num_segments + 1):
+            angle_deg = start_angle_deg + (angle_range / effective_num_segments) * i
+            if angle_deg > 360:
+                angle_deg -= 360
+            
+            new_lat, new_lon = create_point_from_bearing_distance(center_point, radius_km, angle_deg)
+            points.append((new_lon, new_lat))
+        
+        # Pour les arcs fermés, fermer vers le centre
+        if close_arc:
+            points.append((center_lon, center_lat))
+    else:
+        # Cercle complet
+        for i in range(num_segments + 1):
+            angle_deg = (360 / num_segments) * i
+            new_lat, new_lon = create_point_from_bearing_distance(center_point, radius_km, angle_deg)
+            points.append((new_lon, new_lat))
+    return points
+
+def calculate_rectangle_points(center_lat, center_lon, length_km, width_km, bearing_deg):
+    """Calcul de rectangles avec précision Vincenty"""
+    center_point = {"lat": center_lat, "lon": center_lon}
+    half_length_km = length_km / 2
+    half_width_km = width_km / 2
+    
+    corners_local = [
+        (half_length_km, half_width_km),
+        (half_length_km, -half_width_km),
+        (-half_length_km, -half_width_km),
+        (-half_length_km, half_width_km)
+    ]
+    
+    rectangle_points = []
+
+    for x_local, y_local in corners_local:
+        dist_to_corner = math.sqrt(x_local**2 + y_local**2)
+        angle_relative = math.degrees(math.atan2(y_local, x_local))
+        absolute_bearing = (bearing_deg + angle_relative) % 360
+        
+        new_lat, new_lon = create_point_from_bearing_distance(center_point, dist_to_corner, absolute_bearing)
+        rectangle_points.append((new_lon, new_lat))
+    
+    rectangle_points.append(rectangle_points[0])  # Fermer le rectangle
+    return rectangle_points
+
+def calculate_arrow_points(center_lat, center_lon, length_km, bearing_deg, width_km=None):
+    """Calcul d'une flèche d'orientation simple pour indiquer la direction d'un rectangle
+    Basé sur l'implémentation Streamlit : ligne simple du milieu du côté avant vers l'extérieur
+    
+    Args:
+        center_lat, center_lon: Coordonnées du centre du rectangle
+        length_km: Longueur du rectangle en km
+        bearing_deg: Orientation du rectangle en degrés (0° = Nord)
+        width_km: Largeur du rectangle en km (pour calculer la longueur de la flèche)
+    
+    Returns:
+        Liste des points (lon, lat) formant la flèche (polygone fermé à 3 points)
+    """
+    # Rayon de la Terre en km
+    R = 6371.0
+    
+    # Convertir en radians
+    bearing_rad = math.radians(bearing_deg)
+    lat_rad = math.radians(center_lat)
+    lon_rad = math.radians(center_lon)
+    
+    # Point de départ : milieu du côté avant du rectangle (orienté vers le cap)
+    front_offset_km = length_km / 2
+    arrow_start_lat_rad = math.asin(math.sin(lat_rad) * math.cos(front_offset_km / R) +
+                                   math.cos(lat_rad) * math.sin(front_offset_km / R) * math.cos(bearing_rad))
+    
+    arrow_start_lon_rad = lon_rad + math.atan2(math.sin(bearing_rad) * math.sin(front_offset_km / R) * math.cos(lat_rad),
+                                              math.cos(front_offset_km / R) - math.sin(lat_rad) * math.sin(arrow_start_lat_rad))
+    
+    arrow_start_lat = math.degrees(arrow_start_lat_rad)
+    arrow_start_lon = math.degrees(arrow_start_lon_rad)
+    
+    # Point de fin de la flèche (longueur = moitié de la largeur du rectangle)
+    arrow_length_km = (width_km / 2) if width_km else (length_km / 4)  # Fallback si width_km non fourni
+    arrow_end_lat_rad = math.asin(math.sin(math.radians(arrow_start_lat)) * math.cos(arrow_length_km / R) +
+                                 math.cos(math.radians(arrow_start_lat)) * math.sin(arrow_length_km / R) * math.cos(bearing_rad))
+    
+    arrow_end_lon_rad = math.radians(arrow_start_lon) + math.atan2(math.sin(bearing_rad) * math.sin(arrow_length_km / R) * math.cos(math.radians(arrow_start_lat)),
+                                                                  math.cos(arrow_length_km / R) - math.sin(math.radians(arrow_start_lat)) * math.sin(arrow_end_lat_rad))
+    
+    arrow_end_lat = math.degrees(arrow_end_lat_rad)
+    arrow_end_lon = math.degrees(arrow_end_lon_rad)
+    
+    # Retourner les trois points de la flèche pour former un polygone fermé
+    # Point de départ → Pointe de la flèche → Retour au point de départ
+    return [
+        (arrow_start_lon, arrow_start_lat),  # Point de départ (milieu côté avant)
+        (arrow_end_lon, arrow_end_lat),      # Pointe de la flèche
+        (arrow_start_lon, arrow_start_lat)   # Retour au point de départ (fermeture)
+    ]
